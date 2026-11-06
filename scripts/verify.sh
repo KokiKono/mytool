@@ -6,6 +6,14 @@ set -Eeuo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 
+# rustup は Homebrew で keg-only なので、hook のようにログインシェルを通らない起動では PATH に無い
+if ! command -v cargo >/dev/null 2>&1; then
+  for dir in "$HOME/.cargo/bin" /opt/homebrew/opt/rustup/bin /usr/local/opt/rustup/bin; do
+    [[ -x "$dir/cargo" ]] && PATH="$dir:$PATH"
+  done
+  export PATH
+fi
+
 steps=(
   "fmt|cargo fmt --all --check"
   "clippy|cargo clippy --workspace --all-targets --quiet -- -D warnings"
