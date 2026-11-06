@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    # GPUI は macOS では Metal で描くので macOS で回す
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - run: brew install gitleaks
+      - name: verify
+        env:
+          # 禁止語リスト（社名など）。リスト自体が非公開なので secret で渡す
+          MYTOOL_DENYLIST: ${{ secrets.MYTOOL_DENYLIST }}
+        run: scripts/verify.sh
+      - name: gitleaks (history)
+        run: gitleaks git . --config .gitleaks.toml --no-banner --redact

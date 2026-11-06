@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "AskUserQuestion",
+      "Bash(lane ask:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(launchctl:*)",
+      "Bash(pbcopy:*)",
+      "Bash(pbpaste:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/hooks/stop-gate.sh",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}

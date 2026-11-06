@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ビルド成果物と実行記録は追跡しない"
+paths = ['''(^|/)target/''', '''(^|/)runs/''', '''(^|/)\.git/''']
