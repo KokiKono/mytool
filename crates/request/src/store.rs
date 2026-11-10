@@ -35,10 +35,6 @@ impl RequestStore {
         }
     }
 
-    pub fn dir(&self) -> &Path {
-        &self.dir
-    }
-
     /// 条件書を新しいファイルに書き、そのパスを返す。既存のファイルは上書きしない。
     pub fn save(&self, markdown: &str, now: SystemTime) -> io::Result<PathBuf> {
         fs::create_dir_all(&self.dir)?;

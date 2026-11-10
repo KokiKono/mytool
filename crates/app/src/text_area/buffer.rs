@@ -179,29 +179,13 @@ impl Buffer {
     }
 
     pub fn offset_from_utf16(&self, utf16: usize) -> usize {
-        let mut utf8 = 0;
-        let mut count = 0;
-        for ch in self.text.chars() {
-            if count >= utf16 {
-                break;
-            }
-            count += ch.len_utf16();
-            utf8 += ch.len_utf8();
-        }
-        utf8
+        utf16_to_utf8(&self.text, utf16)
     }
 
     pub fn offset_to_utf16(&self, utf8: usize) -> usize {
-        let mut utf16 = 0;
-        let mut count = 0;
-        for ch in self.text.chars() {
-            if count >= utf8 {
-                break;
-            }
-            count += ch.len_utf8();
-            utf16 += ch.len_utf16();
-        }
-        utf16
+        self.text[..utf8.min(self.text.len())]
+            .encode_utf16()
+            .count()
     }
 
     pub fn range_from_utf16(&self, r: &Range<usize>) -> Range<usize> {
@@ -211,6 +195,18 @@ impl Buffer {
     pub fn range_to_utf16(&self, r: &Range<usize>) -> Range<usize> {
         self.offset_to_utf16(r.start)..self.offset_to_utf16(r.end)
     }
+}
+
+/// `text` の中の UTF-16 位置を UTF-8 位置にする。サロゲートの途中なら次の文字の頭へ寄せる。
+pub fn utf16_to_utf8(text: &str, utf16: usize) -> usize {
+    let mut count = 0;
+    for (i, ch) in text.char_indices() {
+        if count >= utf16 {
+            return i;
+        }
+        count += ch.len_utf16();
+    }
+    text.len()
 }
 
 #[cfg(test)]

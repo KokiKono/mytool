@@ -3,7 +3,7 @@
 
 mod buffer;
 
-use std::ops::Range;
+use std::{ops::Range, rc::Rc};
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
@@ -14,7 +14,7 @@ use gpui::{
     rgba, size,
 };
 
-pub use buffer::Buffer;
+use buffer::Buffer;
 
 actions!(
     text_area,
@@ -127,7 +127,7 @@ pub struct TextArea {
     focus_handle: FocusHandle,
     buffer: Buffer,
     placeholder: SharedString,
-    layout: Option<Layout>,
+    layout: Option<Rc<Layout>>,
     scroll_y: Pixels,
     /// 次の描画でカーソルが見える位置までスクロールする
     reveal_cursor: bool,
@@ -397,18 +397,7 @@ impl EntityInputHandler for TextArea {
         let range = range_utf16.map(|r| self.buffer.range_from_utf16(&r));
         // 選択範囲は new_text の中の UTF-16 位置で来る
         let selected = new_selected_range_utf16.map(|r| {
-            let to_utf8 = |utf16: usize| {
-                new_text
-                    .char_indices()
-                    .scan(0, |count, (i, ch)| {
-                        let here = *count;
-                        *count += ch.len_utf16();
-                        Some((here, i))
-                    })
-                    .find(|(here, _)| *here >= utf16)
-                    .map_or(new_text.len(), |(_, i)| i)
-            };
-            to_utf8(r.start)..to_utf8(r.end)
+            buffer::utf16_to_utf8(new_text, r.start)..buffer::utf16_to_utf8(new_text, r.end)
         });
         self.buffer.replace_and_mark(range, new_text, selected);
         self.changed(cx);
@@ -448,9 +437,7 @@ struct TextAreaElement {
 }
 
 struct Prepaint {
-    lines: Vec<(usize, Pixels, WrappedLine)>,
-    line_height: Pixels,
-    scroll_y: Pixels,
+    layout: Rc<Layout>,
     cursor: Option<PaintQuad>,
     selection: Vec<PaintQuad>,
 }
@@ -564,7 +551,7 @@ impl Element for TextAreaElement {
             lines,
             line_height,
             bounds,
-            scroll_y: input.scroll_y,
+            scroll_y: Pixels::ZERO,
         };
         let (cursor_pos, selection_pos) = if buffer.text().is_empty() {
             (Point::default(), None)
@@ -618,21 +605,17 @@ impl Element for TextAreaElement {
             }
         }
 
-        let lines = std::mem::take(&mut layout.lines);
-        let prepaint = Prepaint {
-            lines: lines.clone(),
-            line_height,
-            scroll_y,
-            cursor,
-            selection,
-        };
-        layout.lines = lines;
+        let layout = Rc::new(layout);
         self.input.update(cx, |input, _| {
             input.scroll_y = scroll_y;
             input.reveal_cursor = false;
-            input.layout = Some(layout);
+            input.layout = Some(layout.clone());
         });
-        prepaint
+        Prepaint {
+            layout,
+            cursor,
+            selection,
+        }
     }
 
     fn paint(
@@ -655,11 +638,12 @@ impl Element for TextAreaElement {
             for quad in prepaint.selection.drain(..) {
                 window.paint_quad(quad);
             }
-            for (_, y, line) in &prepaint.lines {
-                let origin = point(bounds.left(), bounds.top() + *y - prepaint.scroll_y);
+            let layout = &prepaint.layout;
+            for (_, y, line) in &layout.lines {
+                let origin = point(bounds.left(), bounds.top() + *y - layout.scroll_y);
                 let _ = line.paint(
                     origin,
-                    prepaint.line_height,
+                    layout.line_height,
                     TextAlign::Left,
                     None,
                     window,

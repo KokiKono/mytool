@@ -84,7 +84,7 @@ pub fn scenario(name: &str) -> Option<(ScriptedAssistant, Vec<Step>)> {
         "error" => (
             vec![
                 Behavior::Reply(AI_1),
-                Behavior::Fail(AskError::TimedOut(Duration::from_secs(180))),
+                Behavior::Fail(AskError::TimedOut(request::claude::DEFAULT_TIMEOUT)),
             ],
             two_sends(),
         ),

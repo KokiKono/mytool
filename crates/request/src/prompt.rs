@@ -32,7 +32,7 @@ pub const DRAFT: &str = "\
 - まだ決まっていない点は推測で埋めず、「## 分かっていること」に未決として書く";
 
 /// 条件書に必ず入る見出し。
-pub const REQUIRED_SECTIONS: [&str; 5] = [
+const REQUIRED_SECTIONS: [&str; 5] = [
     "# 今回の条件",
     "## ゴール",
     "## 受け入れ基準",
@@ -43,15 +43,15 @@ pub const REQUIRED_SECTIONS: [&str; 5] = [
 /// 返答全体が 1 つのコードフェンスで囲まれていたら外す。指示しても付けてくることがある。
 pub fn strip_fence(text: &str) -> String {
     let trimmed = text.trim();
-    let mut body = None;
-    if let Some(rest) = trimmed.strip_prefix("```")
+    let body = if let Some(rest) = trimmed.strip_prefix("```")
         && let Some(inner) = rest.strip_suffix("```")
         && let Some((_lang, inner)) = inner.split_once('\n')
         && !inner.contains("\n```")
     {
-        body = Some(inner.trim());
-    }
-    let body = body.unwrap_or(trimmed);
+        inner.trim()
+    } else {
+        trimmed
+    };
     format!("{body}\n")
 }
 
