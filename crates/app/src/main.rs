@@ -8,15 +8,20 @@ use request::claude::ClaudeCli;
 use request::store::{self, RequestStore};
 
 fn main() {
-    let data_dir = store::data_dir();
+    let demo = std::env::var("MYTOOL_DEMO").ok();
+    // デモの作り物の条件書を本物の置き場に混ぜない。保存先のパスは画面に出るので、ホームの外にする
+    let data_dir = match &demo {
+        Some(_) if std::env::var_os("MYTOOL_DATA_DIR").is_none() => "/tmp/mytool-demo".into(),
+        _ => store::data_dir(),
+    };
     // MYTOOL_DEMO があれば偽の AI で動かし、決めておいた操作を流す（スクリーンショット用）
-    let (assistant, steps): (Arc<dyn Assistant>, _) = match std::env::var("MYTOOL_DEMO") {
-        Ok(name) => {
+    let (assistant, steps): (Arc<dyn Assistant>, _) = match demo {
+        Some(name) => {
             let (assistant, steps) =
                 demo::scenario(&name).unwrap_or_else(|| panic!("MYTOOL_DEMO={name} は知らない値"));
             (Arc::new(assistant), steps)
         }
-        Err(_) => (Arc::new(ClaudeCli::new(data_dir.join("claude"))), vec![]),
+        None => (Arc::new(ClaudeCli::new(data_dir.join("claude"))), vec![]),
     };
     let store = RequestStore::new(&data_dir);
 

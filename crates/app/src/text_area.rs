@@ -279,7 +279,10 @@ impl TextArea {
 
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.buffer.replace(None, &text.replace("\r\n", "\n"));
+            // None だと変換中の文字が置き換わるので、選択範囲を明示する
+            let selected = self.buffer.selected();
+            self.buffer
+                .replace(Some(selected), &text.replace("\r\n", "\n"));
             self.changed(cx);
         }
     }
@@ -295,7 +298,8 @@ impl TextArea {
         let selected = self.buffer.selected_text();
         if !selected.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(selected.to_string()));
-            self.buffer.replace(None, "");
+            let selected = self.buffer.selected();
+            self.buffer.replace(Some(selected), "");
             self.changed(cx);
         }
     }

@@ -3,6 +3,7 @@
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -88,18 +89,25 @@ impl Assistant for ClaudeCli {
                 Err(e) => return Err(AskError::Failed(e.to_string())),
             }
         };
-        let stdout = stdout.join().unwrap_or_default();
-        let stderr = stderr.join().unwrap_or_default();
+        // claude が終わってもパイプを握った子孫が残ると読み終わらないので、ここも期限内で待つ
+        let collect = |rx: mpsc::Receiver<String>| {
+            rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        };
+        let (Ok(stdout), Ok(stderr)) = (collect(stdout), collect(stderr)) else {
+            return Err(AskError::TimedOut(self.timeout));
+        };
         parse_output(&stdout, &stderr, status)
     }
 }
 
-fn read_all(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<String> {
+fn read_all(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<String> {
+    let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = pipe.read_to_end(&mut buf);
-        String::from_utf8_lossy(&buf).into_owned()
-    })
+        let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
+    });
+    rx
 }
 
 /// `claude -p --output-format json` の出力を読む。
@@ -294,6 +302,20 @@ printf '{"subtype":"success","is_error":false,"result":"%s|%s|%s","session_id":"
     fn slow_cli_times_out_and_is_killed() {
         let tmp = tempfile::tempdir().unwrap();
         let program = fake_cli(tmp.path(), "exec sleep 30");
+        let cli = cli(program, tmp.path().into(), Duration::from_millis(300));
+
+        let started = Instant::now();
+        let got = cli.ask(&ask("x", None));
+
+        assert_eq!(got, Err(AskError::TimedOut(Duration::from_millis(300))));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_leftover_child_holding_stdout_does_not_outlast_the_timeout() {
+        let tmp = tempfile::tempdir().unwrap();
+        // claude 本体はすぐ終わるが、出力のパイプを受け継いだ子が残る
+        let program = fake_cli(tmp.path(), "sleep 30 &\necho '{}'");
         let cli = cli(program, tmp.path().into(), Duration::from_millis(300));
 
         let started = Instant::now();

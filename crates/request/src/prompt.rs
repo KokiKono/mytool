@@ -62,7 +62,9 @@ pub fn missing_sections(markdown: &str) -> Vec<&'static str> {
         .filter(|heading| {
             !markdown
                 .lines()
-                .any(|line| line.trim_end().starts_with(heading))
+                .filter_map(|line| line.trim_end().strip_prefix(heading))
+                // 「# 今回の条件: 〇〇」のように題が続くものだけ許し、「## ゴールと背景」は別の見出しとみなす
+                .any(|rest| rest.is_empty() || rest.starts_with(':') || rest.starts_with('：'))
         })
         .collect()
 }
@@ -104,5 +106,11 @@ mod tests {
             missing_sections("# 今回の条件: x\n## ゴール\n"),
             ["## 受け入れ基準", "## やらないこと", "## 上限"]
         );
+    }
+
+    #[test]
+    fn a_longer_heading_does_not_count_as_the_required_one() {
+        let md = "# 今回の条件：x\n## ゴールと背景\n## 受け入れ基準\n## やらないこと\n## 上限値\n";
+        assert_eq!(missing_sections(md), ["## ゴール", "## 上限"]);
     }
 }

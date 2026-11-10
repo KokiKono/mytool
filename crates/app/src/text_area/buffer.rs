@@ -50,14 +50,23 @@ impl Buffer {
         self.marked = None;
     }
 
+    /// 前のフレームの配置から来た位置は、今の文字の途中を指すことがあるので文字の頭へ寄せる。
+    fn clamp(&self, offset: usize) -> usize {
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        offset
+    }
+
     pub fn move_to(&mut self, offset: usize) {
-        let offset = offset.min(self.text.len());
+        let offset = self.clamp(offset);
         self.selected = offset..offset;
         self.reversed = false;
     }
 
     pub fn select_to(&mut self, offset: usize) {
-        let offset = offset.min(self.text.len());
+        let offset = self.clamp(offset);
         if self.reversed {
             self.selected.start = offset;
         } else {
@@ -305,5 +314,14 @@ mod tests {
             assert_eq!(b.offset_to_utf16(utf8), utf16);
             assert_eq!(b.offset_from_utf16(utf16), utf8);
         }
+    }
+
+    #[test]
+    fn offsets_inside_a_character_snap_to_its_start() {
+        let mut b = buf("あい");
+        b.move_to(4);
+        assert_eq!(b.selected(), 3..3);
+        b.select_to(1);
+        assert_eq!(b.selected(), 0..3);
     }
 }
