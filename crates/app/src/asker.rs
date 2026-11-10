@@ -61,6 +61,28 @@ mod tests {
         }
     }
 
+    /// テストが `release` するまで返答しない偽の AI。
+    struct Held(std::sync::Mutex<std::sync::mpsc::Receiver<()>>);
+
+    impl Assistant for Held {
+        fn ask(&self, ask: &Ask) -> Result<Reply, AskError> {
+            self.0.lock().unwrap().recv().unwrap();
+            Echo.ask(ask)
+        }
+    }
+
+    #[test]
+    fn returns_to_the_caller_before_the_assistant_answers() {
+        let (release, held) = std::sync::mpsc::channel();
+        let asker = OnThread(Arc::new(Held(held.into())));
+
+        // 呼び出し元のスレッドで待つなら、release する前のここで止まって戻ってこない
+        let reply = asker.ask(ask("やあ"));
+
+        release.send(()).unwrap();
+        assert_eq!(block_on(reply).unwrap().text, "やあ");
+    }
+
     #[test]
     fn hands_the_reply_from_the_thread_to_the_future() {
         let reply = block_on(OnThread(Arc::new(Echo)).ask(ask("やあ")));
