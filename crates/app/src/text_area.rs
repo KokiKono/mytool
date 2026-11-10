@@ -1,8 +1,6 @@
 //! 複数行の入力欄。gpui の `examples/input.rs`（単一行）を、折り返し・改行・縦移動に広げたもの。
 //! Enter は改行、⌘Enter は [`Send`] を親へ流す。IME で変換中はどちらも何もしない。
 
-mod buffer;
-
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
@@ -14,7 +12,7 @@ use gpui::{
     rgba, size,
 };
 
-use buffer::Buffer;
+use text_buffer::Buffer;
 
 actions!(
     text_area,
@@ -401,7 +399,8 @@ impl EntityInputHandler for TextArea {
         let range = range_utf16.map(|r| self.buffer.range_from_utf16(&r));
         // 選択範囲は new_text の中の UTF-16 位置で来る
         let selected = new_selected_range_utf16.map(|r| {
-            buffer::utf16_to_utf8(new_text, r.start)..buffer::utf16_to_utf8(new_text, r.end)
+            text_buffer::utf16_to_utf8(new_text, r.start)
+                ..text_buffer::utf16_to_utf8(new_text, r.end)
         });
         self.buffer.replace_and_mark(range, new_text, selected);
         self.changed(cx);

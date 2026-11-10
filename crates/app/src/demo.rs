@@ -2,10 +2,11 @@
 //! `MYTOOL_DEMO` で起動したときと、テストで使う。
 
 use std::sync::Mutex;
-use std::time::Duration;
 
-use request::{Ask, AskError, Assistant, Reply};
+use futures::future::{self, BoxFuture, FutureExt};
+use request::{Ask, AskError, Reply};
 
+use crate::asker::Asker;
 use crate::composer::Step;
 
 /// 偽の AI が 1 回の問い合わせにどう応えるか。
@@ -36,11 +37,12 @@ impl ScriptedAssistant {
     }
 }
 
-impl Assistant for ScriptedAssistant {
-    fn ask(&self, ask: &Ask) -> Result<Reply, AskError> {
+/// 返答はその場で決まるので、スレッドを立てずに済んだ future で返す。
+impl Asker for ScriptedAssistant {
+    fn ask(&self, ask: Ask) -> BoxFuture<'static, Result<Reply, AskError>> {
         let n = {
             let mut asked = self.asked.lock().unwrap();
-            asked.push(ask.clone());
+            asked.push(ask);
             asked.len()
         };
         let behavior = {
@@ -52,14 +54,13 @@ impl Assistant for ScriptedAssistant {
             }
         };
         match behavior {
-            Behavior::Reply(text) => Ok(Reply {
+            Behavior::Reply(text) => future::ready(Ok(Reply {
                 text: text.into(),
                 session_id: format!("fake-session-{n}"),
-            }),
-            Behavior::Hang => loop {
-                std::thread::sleep(Duration::from_secs(3600));
-            },
-            Behavior::Fail(error) => Err(error),
+            }))
+            .boxed(),
+            Behavior::Hang => future::pending().boxed(),
+            Behavior::Fail(error) => future::ready(Err(error)).boxed(),
         }
     }
 }

@@ -7,7 +7,9 @@ mod conversation;
 pub mod prompt;
 pub mod store;
 
-pub use conversation::{Conversation, Message, Notice, Pending, Received, Rejected, Role};
+pub use conversation::{
+    Conversation, Message, Notice, Pending, Received, Rejected, Role, restore_input,
+};
 
 use std::fmt;
 use std::time::Duration;
@@ -40,8 +42,9 @@ impl fmt::Display for AskError {
         match self {
             AskError::NotFound(program) => write!(f, "{program} が見つからない"),
             AskError::Failed(detail) => write!(f, "AI の呼び出しに失敗した: {detail}"),
+            // f64 の表示は最短の表記になるので、0.3 秒や 1.25 秒をそのまま出せる
             AskError::TimedOut(limit) => {
-                write!(f, "AI の返答が {} 秒以内に来なかった", limit.as_secs())
+                write!(f, "AI の返答が {} 秒以内に来なかった", limit.as_secs_f64())
             }
         }
     }
@@ -51,4 +54,26 @@ impl fmt::Display for AskError {
 /// 呼び出しは返答が届くまで戻らないので、UI のスレッドからは呼ばない。
 pub trait Assistant: Send + Sync {
     fn ask(&self, ask: &Ask) -> Result<Reply, AskError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_keeps_fractions_of_a_second() {
+        let shown = |d| AskError::TimedOut(d).to_string();
+        assert_eq!(
+            shown(Duration::from_millis(300)),
+            "AI の返答が 0.3 秒以内に来なかった"
+        );
+        assert_eq!(
+            shown(Duration::from_millis(1250)),
+            "AI の返答が 1.25 秒以内に来なかった"
+        );
+        assert_eq!(
+            shown(Duration::from_secs(180)),
+            "AI の返答が 180 秒以内に来なかった"
+        );
+    }
 }

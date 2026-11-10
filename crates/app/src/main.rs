@@ -1,11 +1,12 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
     App, Application, Bounds, WindowBounds, WindowKind, WindowOptions, prelude::*, px, size,
 };
+use mytool::asker::{Asker, OnThread};
 use mytool::composer::Composer;
 use mytool::{demo, text_area};
-use request::Assistant;
 use request::claude::ClaudeCli;
 use request::store::{self, RequestStore};
 
@@ -20,15 +21,18 @@ fn main() {
         _ => store::data_dir(),
     };
     // MYTOOL_DEMO があれば偽の AI で動かし、決めておいた操作を流す（スクリーンショット用）
-    let (assistant, steps): (Arc<dyn Assistant>, _) = match demo {
+    let (asker, steps): (Rc<dyn Asker>, _) = match demo {
         Some(name) => {
             let (assistant, steps) =
                 demo::scenario(&name).unwrap_or_else(|| panic!("MYTOOL_DEMO={name} は知らない値"));
-            (Arc::new(assistant), steps)
+            (Rc::new(assistant), steps)
         }
-        None => (Arc::new(ClaudeCli::new(data_dir.join("claude"))), vec![]),
+        None => (
+            Rc::new(OnThread(Arc::new(ClaudeCli::new(data_dir.join("claude"))))),
+            vec![],
+        ),
     };
-    let store = RequestStore::new(&data_dir);
+    let store = Box::new(RequestStore::new(&data_dir));
 
     Application::new().run(move |cx: &mut App| {
         text_area::bind_keys(cx);
@@ -46,7 +50,7 @@ fn main() {
             },
             |window, cx| {
                 cx.new(|cx| {
-                    let mut composer = Composer::new(assistant, store, cx);
+                    let mut composer = Composer::new(asker, store, cx);
                     composer.focus_input(window, cx);
                     composer.run_script(steps, cx);
                     composer

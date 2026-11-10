@@ -1,5 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::store::Store;
 use crate::{Ask, AskError, Reply, prompt};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,7 +13,17 @@ pub enum Role {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub role: Role,
-    pub text: String,
+    /// 末尾の空白を落とした文。画面は描くたびにこれを複製せず参照だけ増やす
+    pub text: Arc<str>,
+}
+
+impl Message {
+    fn new(role: Role, text: &str) -> Self {
+        Self {
+            role,
+            text: text.trim_end().into(),
+        }
+    }
 }
 
 /// 返答を待っている問い合わせの種類。
@@ -43,18 +55,29 @@ pub enum Rejected {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Received {
     Reply,
-    /// 送った文を入力欄に戻す
+    /// 条件書を受け取って保存を試みた。結果は [`Conversation::notice`] に出る
+    Draft,
+    /// 送った文を、[`restore_input`] で入力欄に戻す
     Failed {
         restore: Option<String>,
     },
-    /// この Markdown を条件書として保存し、[`Conversation::saved`] か
-    /// [`Conversation::save_failed`] で結果を知らせる
-    Draft(String),
+}
+
+/// 返答が失敗して戻ってきた `sent` と、待つあいだに入力欄へ書き足した `typed` をつなぐ。
+/// 書き足した分は消さず、戻した文の後ろに残す。
+pub fn restore_input(sent: String, typed: &str) -> String {
+    if typed.is_empty() {
+        sent
+    } else {
+        format!("{sent}\n{typed}")
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct Conversation {
     messages: Vec<Message>,
+    /// 返答を待っている発言の原文。失敗したら末尾の空白も含めてそのまま入力欄に戻す
+    sent: Option<String>,
     session_id: Option<String>,
     pending: Option<Pending>,
     notice: Option<Notice>,
@@ -93,10 +116,8 @@ impl Conversation {
         if text.trim().is_empty() {
             return Err(Rejected::Empty);
         }
-        self.messages.push(Message {
-            role: Role::User,
-            text: text.to_string(),
-        });
+        self.messages.push(Message::new(Role::User, text));
+        self.sent = Some(text.to_string());
         self.pending = Some(Pending::Reply);
         self.notice = None;
         Ok(Ask {
@@ -121,42 +142,45 @@ impl Conversation {
         })
     }
 
-    pub fn receive(&mut self, result: Result<Reply, AskError>) -> Received {
+    /// 届いた返答を会話に足す。条件書なら `store` に保存し、足りない見出しを調べて知らせる。
+    pub fn receive(&mut self, result: Result<Reply, AskError>, store: &dyn Store) -> Received {
         let Some(pending) = self.pending.take() else {
             // 待っていないのに届いた返答は捨てる
             return Received::Reply;
         };
+        let sent = self.sent.take();
         match (pending, result) {
             (pending, Ok(reply)) => {
                 self.session_id = Some(reply.session_id);
                 match pending {
                     Pending::Reply => {
-                        self.messages.push(Message {
-                            role: Role::Assistant,
-                            text: reply.text,
-                        });
+                        self.messages
+                            .push(Message::new(Role::Assistant, &reply.text));
                         Received::Reply
                     }
                     Pending::Draft => {
                         let markdown = prompt::strip_fence(&reply.text);
-                        self.messages.push(Message {
-                            role: Role::Assistant,
-                            text: markdown.clone(),
+                        self.messages.push(Message::new(Role::Assistant, &markdown));
+                        self.notice = Some(match store.save(&markdown) {
+                            Ok(path) => Notice::Saved {
+                                path,
+                                missing: prompt::missing_sections(&markdown),
+                            },
+                            Err(error) => {
+                                Notice::Error(format!("条件書を保存できなかった: {error}"))
+                            }
                         });
-                        Received::Draft(markdown)
+                        Received::Draft
                     }
                 }
             }
             (Pending::Reply, Err(error)) => {
                 // 届かなかった発言は会話から外して入力欄に戻す。残すと次に送ったとき二重になる
-                let restore = match self.messages.last() {
-                    Some(Message {
-                        role: Role::User, ..
-                    }) => self.messages.pop().map(|m| m.text),
-                    _ => None,
-                };
+                if self.messages.last().is_some_and(|m| m.role == Role::User) {
+                    self.messages.pop();
+                }
                 self.notice = Some(Notice::Error(error.to_string()));
-                Received::Failed { restore }
+                Received::Failed { restore: sent }
             }
             (Pending::Draft, Err(error)) => {
                 self.notice = Some(Notice::Error(error.to_string()));
@@ -164,19 +188,40 @@ impl Conversation {
             }
         }
     }
-
-    pub fn saved(&mut self, path: PathBuf, missing: Vec<&'static str>) {
-        self.notice = Some(Notice::Saved { path, missing });
-    }
-
-    pub fn save_failed(&mut self, error: &std::io::Error) {
-        self.notice = Some(Notice::Error(format!("条件書を保存できなかった: {error}")));
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::io;
+
+    /// 保存した中身を覚えておく偽の保存先。`fail` なら保存に失敗する。
+    #[derive(Default)]
+    struct FakeStore {
+        fail: bool,
+        saved: RefCell<Vec<String>>,
+    }
+
+    impl Store for FakeStore {
+        fn save(&self, markdown: &str) -> io::Result<PathBuf> {
+            if self.fail {
+                return Err(io::Error::other("書けない"));
+            }
+            self.saved.borrow_mut().push(markdown.to_string());
+            Ok(PathBuf::from("/tmp/x.md"))
+        }
+    }
+
+    trait ReceiveWithFake {
+        fn receive_with_fake(&mut self, result: Result<Reply, AskError>) -> Received;
+    }
+
+    impl ReceiveWithFake for Conversation {
+        fn receive_with_fake(&mut self, result: Result<Reply, AskError>) -> Received {
+            self.receive(result, &FakeStore::default())
+        }
+    }
 
     fn reply(text: &str, session: &str) -> Result<Reply, AskError> {
         Ok(Reply {
@@ -190,11 +235,11 @@ mod tests {
         let mut c = Conversation::new();
         let first = c.send("メモ帳がほしい").unwrap();
         assert_eq!(first.resume, None);
-        c.receive(reply("何を保存しますか", "s-1"));
+        c.receive_with_fake(reply("何を保存しますか", "s-1"));
 
         let second = c.send("テキストだけ").unwrap();
         assert_eq!(second.resume.as_deref(), Some("s-1"));
-        c.receive(reply("分かりました", "s-2"));
+        c.receive_with_fake(reply("分かりました", "s-2"));
 
         let third = c.send("以上").unwrap();
         assert_eq!(third.resume.as_deref(), Some("s-2"));
@@ -204,14 +249,10 @@ mod tests {
     fn messages_are_kept_in_the_order_they_happened() {
         let mut c = Conversation::new();
         c.send("一").unwrap();
-        c.receive(reply("二", "s"));
+        c.receive_with_fake(reply("二", "s"));
         c.send("三").unwrap();
-        c.receive(reply("四", "s"));
-        let log: Vec<_> = c
-            .messages()
-            .iter()
-            .map(|m| (m.role, m.text.as_str()))
-            .collect();
+        c.receive_with_fake(reply("四", "s"));
+        let log: Vec<_> = c.messages().iter().map(|m| (m.role, &*m.text)).collect();
         assert_eq!(
             log,
             [
@@ -237,10 +278,10 @@ mod tests {
     fn failure_returns_the_sent_text_and_keeps_the_session() {
         let mut c = Conversation::new();
         c.send("一").unwrap();
-        c.receive(reply("二", "s-1"));
+        c.receive_with_fake(reply("二", "s-1"));
         c.send("三").unwrap();
 
-        let got = c.receive(Err(AskError::TimedOut(std::time::Duration::from_secs(5))));
+        let got = c.receive_with_fake(Err(AskError::TimedOut(std::time::Duration::from_secs(5))));
 
         assert_eq!(
             got,
@@ -260,7 +301,7 @@ mod tests {
     fn sending_again_clears_the_previous_error() {
         let mut c = Conversation::new();
         c.send("一").unwrap();
-        c.receive(Err(AskError::NotFound("claude".into())));
+        c.receive_with_fake(Err(AskError::NotFound("claude".into())));
         assert!(c.notice().is_some());
         c.send("一").unwrap();
         assert_eq!(c.notice(), None);
@@ -273,37 +314,98 @@ mod tests {
         assert_eq!(c.request_draft(), Err(Rejected::Empty));
         c.send("一").unwrap();
         assert!(!c.can_draft());
-        c.receive(reply("二", "s"));
+        c.receive_with_fake(reply("二", "s"));
         assert!(c.can_draft());
     }
 
     #[test]
-    fn draft_is_asked_in_the_same_session_and_handed_back_for_saving() {
+    fn draft_is_asked_in_the_same_session_saved_and_checked_for_missing_sections() {
         let mut c = Conversation::new();
         c.send("一").unwrap();
-        c.receive(reply("二", "s-1"));
+        c.receive_with_fake(reply("二", "s-1"));
 
         let ask = c.request_draft().unwrap();
         assert_eq!(ask.resume.as_deref(), Some("s-1"));
         assert_eq!(ask.prompt, prompt::DRAFT);
         assert_eq!(c.pending(), Some(Pending::Draft));
 
-        let got = c.receive(reply("```markdown\n# 今回の条件: x\n```", "s-2"));
-        assert_eq!(got, Received::Draft("# 今回の条件: x\n".into()));
-        assert_eq!(c.messages().last().unwrap().role, Role::Assistant);
+        let store = FakeStore::default();
+        let got = c.receive(
+            reply("```markdown\n# 今回の条件: x\n\n## ゴール\n```", "s-2"),
+            &store,
+        );
 
-        c.saved(PathBuf::from("/tmp/x.md"), vec![]);
-        assert!(matches!(c.notice(), Some(Notice::Saved { .. })));
+        assert_eq!(got, Received::Draft);
+        assert_eq!(*store.saved.borrow(), ["# 今回の条件: x\n\n## ゴール\n"]);
+        assert_eq!(
+            &*c.messages().last().unwrap().text,
+            "# 今回の条件: x\n\n## ゴール"
+        );
+        assert_eq!(
+            c.notice(),
+            Some(&Notice::Saved {
+                path: PathBuf::from("/tmp/x.md"),
+                missing: vec!["## 受け入れ基準", "## やらないこと", "## 上限"],
+            })
+        );
+        assert!(c.can_draft());
+    }
+
+    #[test]
+    fn draft_that_cannot_be_saved_shows_an_error_and_keeps_the_conversation() {
+        let mut c = Conversation::new();
+        c.send("一").unwrap();
+        c.receive_with_fake(reply("二", "s-1"));
+        c.request_draft().unwrap();
+
+        let store = FakeStore {
+            fail: true,
+            ..Default::default()
+        };
+        let got = c.receive(reply("# 今回の条件: x\n", "s-2"), &store);
+
+        assert_eq!(got, Received::Draft);
+        assert!(
+            matches!(c.notice(), Some(Notice::Error(m)) if m == "条件書を保存できなかった: 書けない")
+        );
+        assert_eq!(c.messages().len(), 3);
+        assert!(c.can_draft());
+    }
+
+    #[test]
+    fn failed_send_gives_back_the_text_exactly_as_typed() {
+        let mut c = Conversation::new();
+        c.send("一\n\n").unwrap();
+        assert_eq!(&*c.messages()[0].text, "一");
+
+        let got = c.receive_with_fake(Err(AskError::NotFound("claude".into())));
+
+        assert_eq!(
+            got,
+            Received::Failed {
+                restore: Some("一\n\n".into())
+            }
+        );
+    }
+
+    #[test]
+    fn restored_text_goes_before_what_was_typed_while_waiting() {
+        assert_eq!(restore_input("送った文".into(), ""), "送った文");
+        assert_eq!(
+            restore_input("送った文".into(), "書き足した文"),
+            "送った文\n書き足した文"
+        );
+        assert_eq!(restore_input("一\n".into(), "二"), "一\n\n二");
     }
 
     #[test]
     fn failed_draft_keeps_the_conversation() {
         let mut c = Conversation::new();
         c.send("一").unwrap();
-        c.receive(reply("二", "s-1"));
+        c.receive_with_fake(reply("二", "s-1"));
         c.request_draft().unwrap();
 
-        let got = c.receive(Err(AskError::Failed("x".into())));
+        let got = c.receive_with_fake(Err(AskError::Failed("x".into())));
 
         assert_eq!(got, Received::Failed { restore: None });
         assert_eq!(c.messages().len(), 2);

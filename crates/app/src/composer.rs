@@ -1,19 +1,18 @@
 //! 要望を書いて AI とやり取りし、条件書にする画面。
 
 use std::collections::VecDeque;
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::rc::Rc;
 
-use futures::channel::oneshot;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable, IntoElement, Render,
     ScrollHandle, SharedString, Task, Window, div, prelude::*, px, rgb,
 };
 use request::{
-    Ask, AskError, Assistant, Conversation, Notice, Pending, Received, Reply, Role, prompt,
-    store::RequestStore,
+    Ask, AskError, Conversation, Notice, Pending, Received, Reply, Role, restore_input,
+    store::Store,
 };
 
+use crate::asker::Asker;
 use crate::text_area::{self, TextArea};
 
 /// 起動時に自動で流す操作。スクリーンショット用の画面の状態を作るために使う。
@@ -25,8 +24,8 @@ pub enum Step {
 
 pub struct Composer {
     conversation: Conversation,
-    assistant: Arc<dyn Assistant>,
-    store: RequestStore,
+    asker: Rc<dyn Asker>,
+    store: Box<dyn Store>,
     input: Entity<TextArea>,
     log: ScrollHandle,
     focus_handle: FocusHandle,
@@ -35,10 +34,10 @@ pub struct Composer {
 }
 
 impl Composer {
-    pub fn new(assistant: Arc<dyn Assistant>, store: RequestStore, cx: &mut Context<Self>) -> Self {
+    pub fn new(asker: Rc<dyn Asker>, store: Box<dyn Store>, cx: &mut Context<Self>) -> Self {
         Self {
             conversation: Conversation::new(),
-            assistant,
+            asker,
             store,
             input: cx.new(|cx| TextArea::new("mytool に足したい機能を書く", cx)),
             log: ScrollHandle::new(),
@@ -98,16 +97,9 @@ impl Composer {
     }
 
     fn ask(&mut self, ask: Ask, cx: &mut Context<Self>) {
-        // 返答まで最長で数分かかる。gpui の executor のスレッドを塞がないよう専用のスレッドで待つ
-        let (tx, rx) = oneshot::channel();
-        let assistant = self.assistant.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(assistant.ask(&ask));
-        });
+        let reply = self.asker.ask(ask);
         self._task = Some(cx.spawn(async move |this, cx| {
-            let result = rx
-                .await
-                .unwrap_or_else(|_| Err(AskError::Failed("AI の呼び出しが途中で止まった".into())));
+            let result = reply.await;
             let _ = this.update(cx, |this, cx| this.receive(result, cx));
         }));
         self.log.scroll_to_bottom();
@@ -115,29 +107,14 @@ impl Composer {
     }
 
     fn receive(&mut self, result: Result<Reply, AskError>, cx: &mut Context<Self>) {
-        match self.conversation.receive(result) {
-            Received::Reply => {}
-            Received::Failed { restore } => {
-                if let Some(sent) = restore {
-                    self.input.update(cx, |input, cx| {
-                        // 待っているあいだに書き足した分は、戻した文の後ろに残す
-                        let typed = input.text();
-                        let text = if typed.is_empty() {
-                            sent
-                        } else {
-                            format!("{sent}\n{typed}")
-                        };
-                        input.set_text(text, cx);
-                    });
-                }
-                self.script.clear();
+        if let Received::Failed { restore } = self.conversation.receive(result, &*self.store) {
+            if let Some(sent) = restore {
+                self.input.update(cx, |input, cx| {
+                    let text = restore_input(sent, input.text());
+                    input.set_text(text, cx);
+                });
             }
-            Received::Draft(markdown) => match self.store.save(&markdown, SystemTime::now()) {
-                Ok(path) => self
-                    .conversation
-                    .saved(path, prompt::missing_sections(&markdown)),
-                Err(error) => self.conversation.save_failed(&error),
-            },
+            self.script.clear();
         }
         self.log.scroll_to_bottom();
         cx.notify();
@@ -178,6 +155,7 @@ impl Composer {
         };
         div()
             .id("notice")
+            .debug_selector(|| "notice".into())
             .mx_4()
             .px_3()
             .py_2()
@@ -230,7 +208,7 @@ impl Render for Composer {
             .conversation
             .messages()
             .iter()
-            .map(|m| Self::render_message(m.role, m.text.trim_end().to_string().into()))
+            .map(|m| Self::render_message(m.role, SharedString::new(m.text.clone())))
             .collect();
         let waiting = pending.map(|p| {
             let label = match p {
