@@ -10,7 +10,16 @@ run_dir="$repo/runs/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 cp CONDITIONS.md "$run_dir/CONDITIONS.md"
 
-export MYTOOL_HOOTL=1 MYTOOL_RUN_DIR="$run_dir"
+# claude の hook や Bash はこの環境を受け継ぐ。brew の rustup は keg-only で、
+# zsh を通らずに起動されると PATH に無いので、ここで 1 回だけ足す
+if ! command -v cargo >/dev/null 2>&1; then
+  for dir in "$HOME/.cargo/bin" /opt/homebrew/opt/rustup/bin; do
+    [[ -x "$dir/cargo" ]] && PATH="$dir:$PATH"
+  done
+  command -v cargo >/dev/null 2>&1 || { echo "hootl: cargo が見つからない" >&2; exit 1; }
+fi
+
+export PATH MYTOOL_HOOTL=1 MYTOOL_RUN_DIR="$run_dir"
 exec claude \
   --permission-mode auto \
   --settings "$repo/.claude/hootl-settings.json" \
