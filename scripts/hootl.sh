@@ -72,7 +72,7 @@ export MYTOOL_STARTED_AT MYTOOL_LIMIT_SEC
 export CARGO_TARGET_DIR="$repo/target"
 
 cd "$work"
-echo "hootl: $work（ブランチ hootl/$ts）で起動する。記録は $run_dir" >&2
+echo "hootl: ${work}（ブランチ hootl/${ts}）で起動する。記録は $run_dir" >&2
 # 長い回の途中で Mac が眠ると止まるので、claude が動いているあいだはスリープさせない
 # --add-dir は値を複数取るので、後ろに別のオプションを置いて区切る
 caffeinate -i claude \
