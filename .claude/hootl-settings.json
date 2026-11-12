@@ -8,7 +8,22 @@
       "Bash(gh issue:*)",
       "Bash(launchctl:*)",
       "Bash(pbcopy:*)",
-      "Bash(pbpaste:*)"
+      "Bash(pbpaste:*)",
+      "Edit(./scripts/**)",
+      "Edit(./.claude/**)",
+      "Edit(./.githooks/**)",
+      "Edit(./.github/**)",
+      "Edit(./.gitleaks.toml)",
+      "Edit(./CONDITIONS.md)",
+      "Edit(./AGENTS.md)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./.gitignore)",
+      "Edit(./rust-toolchain.toml)",
+      "Edit(./rustfmt.toml)",
+      "Edit(./.rustfmt.toml)",
+      "Edit(./clippy.toml)",
+      "Edit(./.clippy.toml)",
+      "Edit(./.cargo/**)"
     ]
   },
   "hooks": {
@@ -17,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/hooks/stop-gate.sh",
+            "command": "\"$MYTOOL_RUN_DIR\"/harness/stop-gate.sh",
             "timeout": 900
           }
         ]

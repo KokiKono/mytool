@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash
 
 - `$MYTOOL_RUN_DIR/CONDITIONS.md`（今回の条件）
 - `$MYTOOL_RUN_DIR/DECISIONS.md`（判断の記録）、`REPORT.md`、`verify.json`
-- `git diff` と `git log`（この実行で入った変更）
+- `git diff $MYTOOL_BASE` と `git log $MYTOOL_BASE..`（この実行で入った変更。`$MYTOOL_BASE` は開始時点の commit）
 - `$MYTOOL_RUN_DIR` にあるスクリーンショット
 
 チェック項目。1 つずつ「満たす / 満たさない / 判断できない」と根拠を書く:

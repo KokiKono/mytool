@@ -2,3 +2,5 @@
 # HOOTL の実行記録。判断の記録やスクリーンショットはローカルにだけ残す
 /runs/
 .DS_Store
+# Claude Code が手元の許可を書き残すファイル
+/.claude/settings.local.json
