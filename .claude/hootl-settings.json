@@ -10,21 +10,13 @@
       "Bash(pbcopy:*)",
       "Bash(pbpaste:*)",
       "Edit(./scripts/**)",
-      "Write(./scripts/**)",
       "Edit(./.claude/**)",
-      "Write(./.claude/**)",
       "Edit(./.githooks/**)",
-      "Write(./.githooks/**)",
       "Edit(./.github/**)",
-      "Write(./.github/**)",
       "Edit(./.gitleaks.toml)",
-      "Write(./.gitleaks.toml)",
       "Edit(./CONDITIONS.md)",
-      "Write(./CONDITIONS.md)",
       "Edit(./AGENTS.md)",
-      "Write(./AGENTS.md)",
-      "Edit(./CLAUDE.md)",
-      "Write(./CLAUDE.md)"
+      "Edit(./CLAUDE.md)"
     ]
   },
   "hooks": {
