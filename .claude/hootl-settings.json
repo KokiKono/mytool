@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$MYTOOL_HARNESS_DIR\"/stop-gate.sh",
+            "command": "\"$MYTOOL_RUN_DIR\"/harness/stop-gate.sh",
             "timeout": 900
           }
         ]

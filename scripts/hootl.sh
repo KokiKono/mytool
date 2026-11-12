@@ -64,18 +64,23 @@ jq --arg p "$work" '.hasCompletedOnboarding = true | .projects[$p].hasTrustDialo
 mv "$claude_json.tmp" "$claude_json"
 
 export PATH CLAUDE_CONFIG_DIR="$config_dir"
-export MYTOOL_HOOTL=1 MYTOOL_RUN_DIR="$run_dir" MYTOOL_BASE="$base" MYTOOL_HARNESS_DIR="$run_dir/harness"
-started_at="$(date +%s)"
-export MYTOOL_STARTED_AT="$started_at" MYTOOL_LIMIT_HOURS="$hours" MYTOOL_LIMIT_VERIFY="$max_verify"
+export MYTOOL_HOOTL=1 MYTOOL_RUN_DIR="$run_dir" MYTOOL_BASE="$base" MYTOOL_LIMIT_VERIFY="$max_verify"
+MYTOOL_STARTED_AT="$(date +%s)"
+MYTOOL_LIMIT_SEC="$(awk -v h="$hours" 'BEGIN { printf "%d", h * 3600 }')"
+export MYTOOL_STARTED_AT MYTOOL_LIMIT_SEC
 # 普段のチェックアウトとビルド結果を共有する。worktree ごとに gpui を一から組むと数分かかる
 export CARGO_TARGET_DIR="$repo/target"
 
 cd "$work"
 echo "hootl: $work（ブランチ hootl/$ts）で起動する。記録は $run_dir" >&2
 # 長い回の途中で Mac が眠ると止まるので、claude が動いているあいだはスリープさせない
-exec caffeinate -i claude \
+caffeinate -i claude \
   --permission-mode auto \
   --setting-sources project \
   --strict-mcp-config \
   --settings "$repo/.claude/hootl-settings.json" \
-  "CONDITIONS.md を読み、今回の条件を確認してから作業を始めてください。記録は $run_dir に残してください。"
+  "CONDITIONS.md を読み、今回の条件を確認してから作業を始めてください。記録は $run_dir に残してください。" || true
+# 落ちた・利用上限に来た・人が止めたなど、Stop hook を通らずに終わったときも知らせる
+if [[ ! -f "$run_dir/.notified" ]]; then
+  osascript -e "display notification \"止まった（Stop hook を通らずに）: $ts\" with title \"mytool HOOTL\"" >/dev/null 2>&1 || true
+fi
