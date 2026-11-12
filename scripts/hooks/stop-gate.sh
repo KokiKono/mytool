@@ -69,7 +69,7 @@ if [[ -n "${MYTOOL_LIMIT_VERIFY:-}" ]] && ((runs >= MYTOOL_LIMIT_VERIFY)); then
   limit="verify.sh の実行回数（${MYTOOL_LIMIT_VERIFY} 回）"
 fi
 deny() {
-  [[ -z "$limit" ]] || block "$limitが上限に来た。受け入れ基準のどこまで満たしたかを REPORT.md に、詰まった点と次に人が決めることを $run_dir/GIVEUP.md に書いて止まる。" limit
+  [[ -z "$limit" ]] || block "${limit}が上限に来た。受け入れ基準のどこまで満たしたかを REPORT.md に、詰まった点と次に人が決めることを $run_dir/GIVEUP.md に書いて止まる。" limit
   block "$@"
 }
 
