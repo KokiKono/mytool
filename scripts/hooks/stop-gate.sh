@@ -49,7 +49,9 @@ block() {
 [[ -f "$run_dir/GIVEUP.md" ]] && finish
 
 # 採点器を変えれば何でも通せてしまうので、判定の前に見る。Bash で書き換えた場合もここで分かる
-guarded=(scripts .claude .githooks .github .gitleaks.toml CONDITIONS.md AGENTS.md CLAUDE.md)
+# .gitignore は未追跡の検出を、rust-toolchain.toml などは verify.sh が見る内容を変えられるので含める
+guarded=(scripts .claude .githooks .github .gitleaks.toml .gitignore rust-toolchain.toml rustfmt.toml .rustfmt.toml clippy.toml .clippy.toml .cargo
+  CONDITIONS.md AGENTS.md CLAUDE.md)
 changed="$(
   cd "$work"
   { git diff --name-only "${MYTOOL_BASE:?}" -- "${guarded[@]}"; git ls-files --others --exclude-standard -- "${guarded[@]}"; } | sort -u
@@ -57,24 +59,27 @@ changed="$(
 [[ -z "$changed" ]] || block "ハーネス（採点器・hook・条件書・指示）は変えない。元に戻すこと（git checkout $MYTOOL_BASE -- <path>）。変える必要があると考えたなら、理由を DECISIONS.md と REPORT.md に書いて人に委ねる。変わっているもの:
 $changed" "harness:$(cksum <<<"$changed")"
 
-limit() {
-  block "$1が上限に来た。受け入れ基準のどこまで満たしたかを REPORT.md に、詰まった点と次に人が決めることを $run_dir/GIVEUP.md に書いて止まる。" limit
-}
+# 上限に来ていても、終わる条件を満たしていれば普通に終わらせる。差し戻す理由があるときだけ、それを上限の案内に置き換える
+limit=""
 if [[ -n "${MYTOOL_STARTED_AT:-}" && -n "${MYTOOL_LIMIT_SEC:-}" ]] && (($(date +%s) - MYTOOL_STARTED_AT >= MYTOOL_LIMIT_SEC)); then
-  limit "時間（$((MYTOOL_LIMIT_SEC / 60)) 分）"
+  limit="時間（$((MYTOOL_LIMIT_SEC / 60)) 分）"
 fi
 runs="$({ wc -l <"$run_dir/verify-history.jsonl"; } 2>/dev/null || echo 0)"
 if [[ -n "${MYTOOL_LIMIT_VERIFY:-}" ]] && ((runs >= MYTOOL_LIMIT_VERIFY)); then
-  limit "verify.sh の実行回数（${MYTOOL_LIMIT_VERIFY} 回）"
+  limit="verify.sh の実行回数（${MYTOOL_LIMIT_VERIFY} 回）"
 fi
+deny() {
+  [[ -z "$limit" ]] || block "$limitが上限に来た。受け入れ基準のどこまで満たしたかを REPORT.md に、詰まった点と次に人が決めることを $run_dir/GIVEUP.md に書いて止まる。" limit
+  block "$@"
+}
 
 # ファイルの有無を先に見る。verify.sh は数分かかり、走るたびに上限の回数にも数えられる
-[[ -f "$run_dir/REPORT.md" ]] || block "$run_dir/REPORT.md が無い。CONDITIONS.md の受け入れ基準ごとに、満たしたか・どのテストやスクリーンショットで確かめたかを書くこと。" report
-[[ -f "$run_dir/AUDIT.md" ]] || block "監査がまだ。auditor サブエージェントを前面で起動し（バックグラウンドにしない）、終わるまで待つ。結果は $run_dir/AUDIT.md に書かせ、指摘があれば直してから終わる。" audit
+[[ -f "$run_dir/REPORT.md" ]] || deny "$run_dir/REPORT.md が無い。CONDITIONS.md の受け入れ基準ごとに、満たしたか・どのテストやスクリーンショットで確かめたかを書くこと。" report
+[[ -f "$run_dir/AUDIT.md" ]] || deny "監査がまだ。auditor サブエージェントを前面で起動し（バックグラウンドにしない）、終わるまで待つ。結果は $run_dir/AUDIT.md に書かせ、指摘があれば直してから終わる。" audit
 if ! out="$("$work/scripts/verify.sh" 2>&1)"; then
-  # 出力には所要時間が入って毎回変わるので、作業場所の中身が前回と同じかで「同じ理由」を判断する
-  tree="$(cd "$work" && { git rev-parse HEAD; git diff HEAD; git ls-files --others --exclude-standard; } | cksum)"
-  block "scripts/verify.sh が通っていない。直してから終わること。末尾:
+  # 出力には所要時間が入って毎回変わるので、作業場所の中身（未追跡のファイルの中身も含む）が前回と同じかで「同じ理由」を判断する
+  tree="$(cd "$work" && GIT_INDEX_FILE="$run_dir/.gate-index" git add -A && GIT_INDEX_FILE="$run_dir/.gate-index" git write-tree)"
+  deny "scripts/verify.sh が通っていない。直してから終わること。末尾:
 $(tail -n 40 <<<"$out")" "verify:$tree"
 fi
 finish

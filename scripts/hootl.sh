@@ -53,15 +53,15 @@ base="$(git rev-parse HEAD)"
 git worktree add --quiet -b "hootl/$ts" "$work" "$base"
 mkdir -p "$run_dir/harness"
 cp CONDITIONS.md "$run_dir/CONDITIONS.md"
-# hook 本体は開始時点の写しを使う。作業場所の scripts/ を書き換えても終わり方は変わらない
-cp scripts/hooks/stop-gate.sh "$run_dir/harness/stop-gate.sh"
+# hook と設定は開始時点の写しを使う。作業場所や普段のチェックアウトを書き換えても終わり方は変わらない
+cp scripts/hooks/stop-gate.sh .claude/hootl-settings.json "$run_dir/harness/"
 
 # 専用の設定ディレクトリでは初回の案内と信頼の確認が出て止まるので、済ませた扱いにしておく
 claude_json="$config_dir/.claude.json"
 [[ -f "$claude_json" ]] || echo '{}' >"$claude_json"
 jq --arg p "$work" '.hasCompletedOnboarding = true | .projects[$p].hasTrustDialogAccepted = true' \
-  "$claude_json" >"$claude_json.tmp"
-mv "$claude_json.tmp" "$claude_json"
+  "$claude_json" >"$claude_json.$$"
+mv "$claude_json.$$" "$claude_json"
 
 export PATH CLAUDE_CONFIG_DIR="$config_dir"
 export MYTOOL_HOOTL=1 MYTOOL_RUN_DIR="$run_dir" MYTOOL_BASE="$base" MYTOOL_LIMIT_VERIFY="$max_verify"
@@ -74,11 +74,13 @@ export CARGO_TARGET_DIR="$repo/target"
 cd "$work"
 echo "hootl: $work（ブランチ hootl/$ts）で起動する。記録は $run_dir" >&2
 # 長い回の途中で Mac が眠ると止まるので、claude が動いているあいだはスリープさせない
+# --add-dir は値を複数取るので、後ろに別のオプションを置いて区切る
 caffeinate -i claude \
+  --add-dir "$run_dir" \
   --permission-mode auto \
   --setting-sources project \
   --strict-mcp-config \
-  --settings "$repo/.claude/hootl-settings.json" \
+  --settings "$run_dir/harness/hootl-settings.json" \
   "CONDITIONS.md を読み、今回の条件を確認してから作業を始めてください。記録は $run_dir に残してください。" || true
 # 落ちた・利用上限に来た・人が止めたなど、Stop hook を通らずに終わったときも知らせる
 if [[ ! -f "$run_dir/.notified" ]]; then

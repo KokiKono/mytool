@@ -16,7 +16,14 @@
       "Edit(./.gitleaks.toml)",
       "Edit(./CONDITIONS.md)",
       "Edit(./AGENTS.md)",
-      "Edit(./CLAUDE.md)"
+      "Edit(./CLAUDE.md)",
+      "Edit(./.gitignore)",
+      "Edit(./rust-toolchain.toml)",
+      "Edit(./rustfmt.toml)",
+      "Edit(./.rustfmt.toml)",
+      "Edit(./clippy.toml)",
+      "Edit(./.clippy.toml)",
+      "Edit(./.cargo/**)"
     ]
   },
   "hooks": {
