@@ -23,6 +23,12 @@ fn data_dir_from(env: Option<OsString>, home: Option<PathBuf>) -> PathBuf {
     }
 }
 
+/// 条件書の保存先。本物は [`RequestStore`]、テストでは偽物に差し替える。
+pub trait Store {
+    /// 条件書を保存し、保存した場所を返す。
+    fn save(&self, markdown: &str) -> io::Result<PathBuf>;
+}
+
 pub struct RequestStore {
     dir: PathBuf,
 }
@@ -36,7 +42,7 @@ impl RequestStore {
     }
 
     /// 条件書を新しいファイルに書き、そのパスを返す。既存のファイルは上書きしない。
-    pub fn save(&self, markdown: &str, now: SystemTime) -> io::Result<PathBuf> {
+    pub fn save_at(&self, markdown: &str, now: SystemTime) -> io::Result<PathBuf> {
         fs::create_dir_all(&self.dir)?;
         let stem = file_stem(now);
         for n in 1.. {
@@ -60,6 +66,12 @@ impl RequestStore {
             }
         }
         unreachable!()
+    }
+}
+
+impl Store for RequestStore {
+    fn save(&self, markdown: &str) -> io::Result<PathBuf> {
+        self.save_at(markdown, SystemTime::now())
     }
 }
 
@@ -129,7 +141,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = RequestStore::new(tmp.path());
 
-        let path = store.save("# 今回の条件: x\n", at(0)).unwrap();
+        let path = store.save_at("# 今回の条件: x\n", at(0)).unwrap();
 
         assert_eq!(path.parent().unwrap(), tmp.path().join("requests"));
         assert_eq!(fs::read_to_string(&path).unwrap(), "# 今回の条件: x\n");
@@ -140,8 +152,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = RequestStore::new(tmp.path());
 
-        let first = store.save("一", at(0)).unwrap();
-        let second = store.save("二", at(0)).unwrap();
+        let first = store.save_at("一", at(0)).unwrap();
+        let second = store.save_at("二", at(0)).unwrap();
 
         assert_ne!(first, second);
         assert_eq!(fs::read_to_string(first).unwrap(), "一");

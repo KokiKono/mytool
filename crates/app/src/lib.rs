@@ -1,3 +1,4 @@
+pub mod asker;
 pub mod composer;
 pub mod demo;
 pub mod text_area;
