@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use gpui::{App, Application, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{
+    App, Application, Bounds, WindowBounds, WindowKind, WindowOptions, prelude::*, px, size,
+};
 use mytool::composer::Composer;
 use mytool::{demo, text_area};
 use request::Assistant;
@@ -9,6 +11,9 @@ use request::store::{self, RequestStore};
 
 fn main() {
     let demo = std::env::var("MYTOOL_DEMO").ok();
+    // デモはスクリーンショットを撮るための起動で、HOOTL が裏で何度も行う。人の作業中にキー入力を奪わないよう、
+    // アプリを前面にしないパネルにする。ただの背面のウィンドウだと他のアプリに隠れ、macOS が描き直さなくなる
+    let foreground = demo.is_none();
     // デモの作り物の条件書を本物の置き場に混ぜない。保存先のパスは画面に出るので、ホームの外にする
     let data_dir = match &demo {
         Some(_) if std::env::var_os("MYTOOL_DATA_DIR").is_none() => "/tmp/mytool-demo".into(),
@@ -31,6 +36,12 @@ fn main() {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                focus: foreground,
+                kind: if foreground {
+                    WindowKind::Normal
+                } else {
+                    WindowKind::PopUp
+                },
                 ..Default::default()
             },
             |window, cx| {
@@ -43,6 +54,8 @@ fn main() {
             },
         )
         .expect("ウィンドウを開けなかった");
-        cx.activate(true);
+        if foreground {
+            cx.activate(true);
+        }
     });
 }

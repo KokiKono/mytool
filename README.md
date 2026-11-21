@@ -11,6 +11,7 @@ macOS 用の個人ツールを 1 本にまとめる常駐アプリ。[GPUI](http
 1. `brew install rustup gitleaks`（rustup は keg-only なので `$(brew --prefix rustup)/bin` を PATH に足す）
 2. `scripts/setup.sh` — git hook を有効にし、禁止語リスト `~/.config/mytool/deny.txt` を作る。中身（社名など）を書く
 3. 端末アプリに「画面収録」を許可する（システム設定 → プライバシーとセキュリティ）。`scripts/screenshot.sh` が使う
+4. HOOTL 用の claude にログインする: `CLAUDE_CONFIG_DIR=~/.config/mytool/claude claude auth login`。HOOTL は普段の `~/.claude`（個人のルール・スキル・MCP）を読まない専用の設定で動く
 
 ## 使うもの
 
@@ -19,7 +20,7 @@ macOS 用の個人ツールを 1 本にまとめる常駐アプリ。[GPUI](http
 | `cargo run -p mytool` | 起動 |
 | `scripts/verify.sh` | fmt / clippy / test / 漏洩検査 |
 | `scripts/screenshot.sh <png>` | 起動してウィンドウを撮る |
-| `scripts/hootl.sh` | `CONDITIONS.md` の条件で HOOTL を 1 回走らせる。記録は `runs/<日時>/` |
+| `scripts/hootl.sh` | HEAD の `CONDITIONS.md` の条件で HOOTL を 1 回走らせる。作業は `../mytool.hootl-<日時>`（ブランチ `hootl/<日時>`）、記録は `runs/<日時>/`。終わると macOS の通知が出る |
 
 ## public リポジトリとして守ること
 

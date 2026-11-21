@@ -26,8 +26,11 @@ mytool は macOS 用の常駐ツールで、GPUI（Zed の UI フレームワー
 
 ## HOOTL で動いているとき（`MYTOOL_HOOTL=1`）
 
+`scripts/hootl.sh` が回ごとの worktree（ブランチ `hootl/<日時>`）を作り、そこで起動している。
+
 - 人には質問しない。迷ったら、選んだ案・選ばなかった案・理由を `$MYTOOL_RUN_DIR/DECISIONS.md` に書いて先に進む
-- push・PR の作成はしない。コミットはしてよい（作業ブランチで）
-- 終わる前に `auditor` サブエージェントを起動し、指摘を直す
-- `$MYTOOL_RUN_DIR/REPORT.md` に、受け入れ基準ごとの結果と確かめ方を書く
-- 上限に達しても受け入れ基準を満たせないときは、`$MYTOOL_RUN_DIR/GIVEUP.md` に、どこで詰まったか・次に人が何を決めればよいかを書いて止まる
+- push・PR の作成はしない。コミットはしてよい（今のブランチで）
+- ハーネス（`scripts/`・`.claude/`・`.githooks/`・`.github/`・`.gitleaks.toml`・`.gitignore`・`rust-toolchain.toml`・rustfmt や clippy の設定・`.cargo/`・`CONDITIONS.md`・`AGENTS.md`・`CLAUDE.md`）は変えない。終了の判定は開始時点の内容と比べるので、変えると終われない。変える必要があると考えたら、理由を DECISIONS.md と REPORT.md に書いて人に委ねる
+- 終わる前に `auditor` サブエージェントを前面で起動し（バックグラウンドにしない）、終わるまで待ってから指摘を直す
+- `$MYTOOL_RUN_DIR/REPORT.md` に、受け入れ基準ごとの結果と確かめ方を書く。最後に「次の回に回すこと」の節を作り、見送ったものと、その回で測らないと分からなかったことを並べる（無ければ「なし」）
+- 上限（CONDITIONS.md の「## 上限」）は Stop hook が時間と `verify-history.jsonl` の件数で見ている。上限に達しても受け入れ基準を満たせないときは、`$MYTOOL_RUN_DIR/GIVEUP.md` に、どこで詰まったか・次に人が何を決めればよいかを書いて止まる
