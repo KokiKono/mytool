@@ -304,7 +304,6 @@ fn draft_that_cannot_be_saved_shows_an_error(cx: &mut TestAppContext) {
         );
         assert!(c.conversation().can_draft());
     });
-    // エラーの知らせが画面に描かれている
     assert!(cx.debug_bounds("notice").is_some());
 }
 

@@ -7,7 +7,7 @@ use futures::future::BoxFuture;
 use request::{Ask, AskError, Assistant, Reply};
 
 /// 画面から見た AI。返答は future で受け取る。
-/// 本物は [`OnThread`]、テストでは返答を届ける時機をテストが決める偽物に差し替える。
+/// 本物は [`OnThread`]。デモは決めておいた返答をすぐ返す偽物、テストは返答を届ける時機をテストが決める偽物に差し替える。
 pub trait Asker {
     fn ask(&self, ask: Ask) -> BoxFuture<'static, Result<Reply, AskError>>;
 }
