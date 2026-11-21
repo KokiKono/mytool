@@ -183,7 +183,8 @@ impl Conversation {
             }
             (Waiting::Reply { sent }, Err(error)) => {
                 // 届かなかった発言は会話から外して入力欄に戻す。残すと次に送ったとき二重になる
-                self.messages.pop();
+                let last = self.messages.pop();
+                debug_assert!(last.is_some_and(|m| m.role == Role::User));
                 self.notice = Some(Notice::Error(error.to_string()));
                 Received::Failed {
                     restore: Some(sent),
